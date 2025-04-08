@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace NinjaCache;
 
@@ -34,16 +32,28 @@ public class DistributedCacheManager
         return Encoding.UTF8.GetString(buffer, 0, bytes);
     }
 
-    public async Task<string> Set(string key, string value)
+    public async Task<string> Set(string key, object value, DateTimeOffset expiryTime)
     {
         int port = GetNodePort(key);
-        return await SendCommand(port, $"SET {key} {value}");
+        CacheEntry<object> cacheEntry = new()
+        {
+            Value = value,
+            ExpiryTime = expiryTime
+        };
+        var jsonString = JsonSerializer.Serialize(cacheEntry);
+        return await SendCommand(port, $"SET {key} {jsonString}");
     }
 
     public async Task<string> Get(string key)
     {
         int port = GetNodePort(key);
-        return await SendCommand(port, $"GET {key}");
+        var res = await SendCommand(port, $"GET {key}");
+        if(res != "NULL")
+        {
+            var rsp = JsonSerializer.Deserialize<CacheEntry<object>>(res);
+            res = rsp.IsExpired() ? null : res;
+        }
+        return res;
     }
 
     public async Task<string> Delete(string key)
