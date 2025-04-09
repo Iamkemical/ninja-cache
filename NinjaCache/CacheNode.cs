@@ -1,9 +1,8 @@
-using System;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace NinjaCache;
 
@@ -40,14 +39,28 @@ public class CacheNode
 
     private async Task<string> HandleRequest(string request)
     {
-        var parts = request.Split(' ');
-        var command = parts[0].ToUpper();
+        string[] parts;
+        string jsonPart = null;
 
+        //Find the first part before the JSON
+        if(request.Contains('{'))
+        {
+            int jsonStartIndex = request.IndexOf('{');
+            string commandPart = request.Substring(0, jsonStartIndex).Trim();
+            jsonPart = request.Substring(jsonStartIndex);
+
+            // Put both into an array
+            parts = commandPart.Split(" ");
+        }
+        else
+        {
+            parts = request.Split(" ");
+        }
         string response;
-        switch (command)
+        switch (parts[0])
         {
             case "SET":
-                _store.TryAdd(parts[1], parts[2]);
+                _store.TryAdd(parts[1], jsonPart);
                 response = "OK";
                 break;
             case "GET":
@@ -62,5 +75,18 @@ public class CacheNode
         }
         
         return response;
+    }
+
+    public void CleanupStore()
+    {
+        foreach(var key in _store.Keys)
+        {
+            _store.TryGetValue(key, out var value);
+            var cachedObj = JsonSerializer.Deserialize<CacheEntry<object>>(value);
+            if (cachedObj is not null && cachedObj.IsExpired())
+            {
+                _store.TryRemove(key, out _);
+            }
+        }
     }
 }
